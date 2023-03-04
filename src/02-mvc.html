@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>MV</title>
+    <title>MVC</title>
     <meta charset="utf-8" />
   </head>
   <body>
@@ -172,11 +172,12 @@
         };
       }
 
-      // VIEW - show ui, events logics
+      // VIEW
+      // . super dumb. show ui, pass events to controller
       class TaskPanelView {
-        // . works with TaskListModel
-        constructor(taskList) {
+        constructor(taskList, handlers) {
           this.taskList = taskList;
+          this.handlers = handlers;
         }
 
         $createEditForm = document.getElementById('createEditTask');
@@ -186,8 +187,6 @@
         $taskContentInput = document.getElementById('taskContentInput');
         $taskList = document.getElementById('taskList');
 
-        editTaskId = '';
-
         showCreateEditForm = () => {
           this.$createEditForm.style.display = 'block';
         };
@@ -196,43 +195,24 @@
           this.$createEditForm.style.display = 'none';
         };
 
-        onSubmit = () => {
-          const content = this.$taskContentInput.value;
-
-          if (!!this.editTaskId) {
-            taskList.update(this.editTaskId, content);
-
-            this.editTaskId = '';
-            this.hideCreateEditform();
-          } else {
-            this.taskList.create(content);
-          }
-
-          this.$taskContentInput.value = '';
-        };
-
         init = () => {
-          this.hideCreateEditform();
-
           this.$createButton.addEventListener('click', () => {
-            this.showCreateEditForm();
+            this.handlers.onCreate();
           });
 
           this.$cancelButton.addEventListener('click', () => {
-            this.hideCreateEditform();
+            this.handlers.onCancel();
           });
 
           this.$createForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            this.onSubmit();
+            this.handlers.onSubmit();
           });
 
           this.taskList.subscribe(() => {
             const newList = this.taskList.get();
             this.render(newList);
           });
-
-          this.taskList.fetch();
         };
 
         render = (tasks) => {
@@ -256,25 +236,74 @@
             );
 
             document.getElementById(selectId).addEventListener('click', () => {
-              this.taskList.select(task.id);
+              this.handlers.onSelect(task.id);
             });
 
             document.getElementById(editId).addEventListener('click', () => {
-              this.editTaskId = task.id;
-              this.$taskContentInput.value = task.content;
-              this.showCreateEditForm();
+              this.handlers.onEdit(task.id);
             });
 
             document.getElementById(deleteId).addEventListener('click', () => {
-              this.taskList.delete(task.id);
+              this.handlers.onDelete(task.id);
             });
           });
         };
       }
 
-      const taskList = new TaskListModel();
-      const taskPanelView = new TaskPanelView(taskList);
-      taskPanelView.init();
+      // CONTROLLER
+      // . ui events logics, communicates with Model
+      class TaskPanelController {
+        editTaskId = '';
+
+        submit = () => {
+          const content = this.taskPanelView.$taskContentInput.value;
+
+          if (!!this.editTaskId) {
+            this.taskList.update(this.editTaskId, content);
+            this.editTaskId = '';
+            this.taskPanelView.hideCreateEditform();
+          } else {
+            this.taskList.create(content);
+          }
+
+          this.taskPanelView.$taskContentInput.value = '';
+        };
+
+        init = () => {
+          this.taskList = new TaskListModel();
+          this.taskPanelView = new TaskPanelView(this.taskList, {
+            onCreate: () => {
+              this.taskPanelView.showCreateEditForm();
+            },
+            onCancel: () => {
+              this.taskPanelView.hideCreateEditform();
+            },
+            onSubmit: () => {
+              this.submit();
+            },
+            onSelect: (id) => {
+              this.taskList.select(id);
+            },
+            onEdit: (id) => {
+              this.editTaskId = id;
+              const task = this.taskList.getById(id);
+              this.taskPanelView.$taskContentInput.value = task.content;
+              this.taskPanelView.showCreateEditForm();
+            },
+            onDelete: (id) => {
+              this.taskList.delete(id);
+            },
+          });
+
+          this.taskPanelView.init();
+          this.taskPanelView.hideCreateEditform();
+          this.taskList.fetch();
+        };
+      }
+
+      // controller is the main entity, which inits other after
+      const controller = new TaskPanelController();
+      controller.init();
     </script>
   </body>
 </html>
