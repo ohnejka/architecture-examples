@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>MV</title>
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <section>
+      <button id="create">Create</button>
+      <div id="createEditTask">
+        <form id="createForm">
+          <input type="text" id="taskContentInput" />
+          <button id="save" type="submit">Save</button>
+          <button id="cancel" type="reset">Cancel</button>
+        </form>
+      </div>
+      <ul id="taskList"></ul>
+    </section>
+    <style>
+      .task {
+        padding: 15px;
+        border: 1px solid #eee;
+      }
+
+      .select {
+        background-color: #eee;
+      }
+    </style>
+    <script>
+      let apiTaskList = [
+        {
+          id: `${Math.random()}`,
+          content: 'Task One',
+        },
+        {
+          id: `${Math.random()}`,
+          content: 'Task Two',
+        },
+        {
+          id: `${Math.random()}`,
+          content: 'Task Three',
+        },
+      ];
+
+      const api = {
+        get: (url) => {
+          const id = url.split('/')[2];
+
+          if (id) {
+            return apiTaskList.find((task) => task.id === id);
+          } else {
+            return apiTaskList;
+          }
+        },
+        post: (url, task) => {
+          apiTaskList.push(task);
+        },
+        delete: (url) => {
+          const id = url.split('/')[2];
+          apiTaskList = apiTaskList.filter((task) => task.id !== id);
+        },
+        update: (url, newTask) => {
+          apiTaskList = apiTaskList.map((task) => {
+            if (task.id === newTask.id) {
+              return newTask;
+            }
+
+            return task;
+          });
+        },
+      };
+
+      // MODEL - BL responsibility
+      class TaskModel {
+        constructor(id, content, select) {
+          this.id = id;
+          this.content = content;
+          this.select = select;
+        }
+
+        changeContent = (newContent) => {
+          if (newContent.trim().length < 5) {
+            alert('content should be longer than 5 symbols');
+            return;
+          }
+
+          this.content = newContent.trim();
+        };
+
+        changeSelect = () => {
+          this.select = !this.select;
+        };
+
+        fetch = () => {
+          const task = api.get(`/tasks/${this.id}`);
+          this.content = task.content;
+        };
+
+        delete = () => {
+          api.delete(`/tasks/${this.id}`);
+        };
+
+        save = () => {
+          api.update(`/tasks/${this.id}`, this);
+        };
+      }
+
+      // MODEL - BL responsibility
+      class TaskListModel {
+        list = [];
+        subscribers = [];
+
+        subscribe = (callback) => {
+          this.subscribers.push(callback);
+        };
+
+        publish = () => {
+          this.subscribers.forEach((sub) => sub());
+        };
+
+        fetch = () => {
+          const list = api.get('/tasks');
+
+          list.forEach((task) => {
+            this.list.push(new TaskModel(task.id, task.content, false));
+          });
+
+          this.publish();
+        };
+
+        get = () => {
+          return this.list;
+        };
+
+        getById = (id) => {
+          return this.list.find((task) => task.id === id);
+        };
+
+        create = (content) => {
+          const task = new TaskModel(`${Math.random()}`, content, false);
+
+          api.post('/tasks', task);
+          this.list.push(task);
+          this.publish();
+        };
+
+        update = (id, content) => {
+          const task = this.list.find((task) => task.id === id);
+          task.changeContent(content);
+          task.save();
+          this.publish();
+        };
+
+        delete = (id) => {
+          const task = this.list.find((task) => task.id === id);
+          task.delete();
+          this.list = this.list.filter((task) => task.id !== id);
+
+          this.publish();
+        };
+
+        select = (id) => {
+          this.list = this.list.map((task) => {
+            if (task.id === id) {
+              task.changeSelect();
+            }
+
+            return task;
+          });
+
+          this.publish();
+        };
+      }
+
+      // VIEW - only visual work responsibility
+      class TaskPanelView {
+        // . works with TaskListModel
+        constructor(taskList) {
+          this.taskList = taskList;
+        }
+
+        $createEditForm = document.getElementById('createEditTask');
+        $createButton = document.getElementById('create');
+        $cancelButton = document.getElementById('cancel');
+        $createForm = document.getElementById('createForm');
+        $taskContentInput = document.getElementById('taskContentInput');
+        $taskList = document.getElementById('taskList');
+
+        editTaskId = '';
+
+        showCreateEditForm = () => {
+          this.$createEditForm.style.display = 'block';
+        };
+
+        hideCreateEditform = () => {
+          this.$createEditForm.style.display = 'none';
+        };
+
+        onSubmit = () => {
+          const content = this.$taskContentInput.value;
+
+          if (!!this.editTaskId) {
+            taskList.update(this.editTaskId, content);
+
+            this.editTaskId = '';
+            this.hideCreateEditform();
+          } else {
+            this.taskList.create(content);
+          }
+
+          this.$taskContentInput.value = '';
+        };
+
+        init = () => {
+          this.hideCreateEditform();
+
+          this.$createButton.addEventListener('click', () => {
+            this.showCreateEditForm();
+          });
+
+          this.$cancelButton.addEventListener('click', () => {
+            this.hideCreateEditform();
+          });
+
+          this.$createForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.onSubmit();
+          });
+
+          this.taskList.subscribe(() => {
+            const newList = this.taskList.get();
+            this.render(newList);
+          });
+
+          this.taskList.fetch();
+        };
+
+        render = (tasks) => {
+          this.$taskList.innerHTML = '';
+
+          tasks.forEach((task) => {
+            const editId = task.id + 'edit';
+            const deleteId = task.id + 'delete';
+            const selectId = task.id + 'select';
+
+            this.$taskList.insertAdjacentHTML(
+              'beforeend',
+              `
+                <div class="task ${task.select ? 'select' : ''}">
+                    <div>${task.content}</div>
+                    <button id="${editId}" type="button">Edit</button>
+                    <button id="${deleteId}" type="button">Delete</button>
+                    <button id="${selectId}" type="button">Select</button>
+                </div>
+                `
+            );
+
+            document.getElementById(selectId).addEventListener('click', () => {
+              this.taskList.select(task.id);
+            });
+
+            document.getElementById(editId).addEventListener('click', () => {
+              this.editTaskId = task.id;
+              this.$taskContentInput.value = task.content;
+              this.showCreateEditForm();
+            });
+
+            document.getElementById(deleteId).addEventListener('click', () => {
+              this.taskList.delete(task.id);
+            });
+          });
+        };
+      }
+
+      const taskList = new TaskListModel();
+      const taskPanelView = new TaskPanelView(taskList);
+      taskPanelView.init();
+    </script>
+  </body>
+</html>
